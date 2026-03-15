@@ -1,28 +1,32 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Online Paint PeerJS</title>
-    <!-- Подключаем библиотеку связи -->
-    <script src="https://unpkg.com"></script>
+    <title>Direct P2P Paint</title>
     <style>
-        body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
-        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.9); padding: 15px; border-radius: 10px; border: 1px solid #00ff88; width: 250px; }
-        canvas { background: #ffffff; cursor: crosshair; }
-        input { width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; background: #333; color: white; border: 1px solid #555; }
-        button { width: 100%; padding: 10px; background: #00ff88; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; }
-        #my-id-box { font-size: 14px; margin-bottom: 10px; }
-        #my-id { color: #00ff88; font-family: monospace; cursor: pointer; text-decoration: underline; }
+        body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; }
+        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.9); padding: 15px; border-radius: 10px; border: 1px solid #ff00ff; width: 300px; font-size: 12px; }
+        canvas { background: #fff; cursor: crosshair; }
+        textarea { width: 100%; height: 60px; background: #333; color: #0f0; border: 1px solid #555; font-size: 10px; margin: 5px 0; }
+        button { width: 100%; padding: 8px; background: #ff00ff; border: none; color: white; font-weight: bold; cursor: pointer; margin-top: 5px; }
+        .step { margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    <div id="my-id-box">Твой ID: <span id="my-id">Загрузка...</span></div>
-    <input type="text" id="friend-id" placeholder="Вставь ID друга">
-    <button onclick="connectToFriend()">ПОДКЛЮЧИТЬСЯ</button>
-    <div id="status" style="font-size: 12px; margin-top: 10px; color: #aaa;">Статус: Готов рисовать</div>
+    <div class="step">
+        <b>1. Твой секретный код:</b>
+        <textarea id="myCode" readonly placeholder="Нажми Создать..."></textarea>
+        <button onclick="createOffer()">Создать код для друга</button>
+    </div>
+    
+    <div class="step">
+        <b>2. Код от друга:</b>
+        <textarea id="friendCode" placeholder="Вставь код друга сюда..."></textarea>
+        <button onclick="connectFriend()">Подключиться к другу</button>
+    </div>
+    <div id="status" style="color: #ff00ff;">Статус: Локально</div>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -30,82 +34,74 @@
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const myIdDisplay = document.getElementById('my-id');
-    const status = document.getElementById('status');
-
-    // 1. Настройка холста (Рисует СРАЗУ)
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    let drawing = false;
-    let conn = null;
+    // Конфигурация для пробивки интернета (бесплатные Google сервера)
+    const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
 
-    function draw(x, y, color, isLocal = true) {
+    let dc = null; // Канал данных
+
+    // Создание подключения (шаг 1)
+    async function createOffer() {
+        dc = pc.createDataChannel("chat");
+        setupDc();
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        
+        // Ждем сбора путей связи
+        pc.onicecandidate = (e) => {
+            if (!e.candidate) document.getElementById('myCode').value = JSON.stringify(pc.localDescription);
+        };
+    }
+
+    // Ответ на подключение (шаг 2)
+    async function connectFriend() {
+        const txt = document.getElementById('friendCode').value;
+        const remoteDesc = new RTCSessionDescription(JSON.parse(txt));
+        await pc.setRemoteDescription(remoteDesc);
+
+        if (remoteDesc.type === 'offer') {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            pc.onicecandidate = (e) => {
+                if (!e.candidate) document.getElementById('myCode').value = JSON.stringify(pc.localDescription);
+            };
+            document.getElementById('status').innerText = "Статус: Отправь свой код обратно!";
+        } else {
+            document.getElementById('status').innerText = "Статус: Соединение установлено!";
+        }
+    }
+
+    pc.ondatachannel = (e) => {
+        dc = e.channel;
+        setupDc();
+    };
+
+    function setupDc() {
+        dc.onopen = () => document.getElementById('status').innerText = "Статус: ОНЛАЙН!";
+        dc.onmessage = (e) => {
+            const d = JSON.parse(e.data);
+            draw(d.x, d.y, '#ff0000', false);
+        };
+    }
+
+    function draw(x, y, color, send = true) {
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, 5, 0, Math.PI * 2);
         ctx.fill();
-
-        // Отправляем точку, если есть связь
-        if (isLocal && conn && conn.open) {
-            conn.send({ x, y });
+        if (send && dc && dc.readyState === 'open') {
+            dc.send(JSON.stringify({x, y}));
         }
     }
 
-    // События мышки
+    let drawing = false;
     canvas.onmousedown = () => drawing = true;
     window.onmouseup = () => drawing = false;
-    canvas.onmousemove = (e) => {
-        if (drawing) draw(e.clientX, e.clientY, '#00ff88');
-    };
-
-    // События тача (телефон)
-    canvas.ontouchmove = (e) => {
-        e.preventDefault();
-        const t = e.touches[0];
-        draw(t.clientX, t.clientY, '#00ff88');
-    };
-
-    // 2. Логика связи (PeerJS)
-    const peer = new Peer();
-
-    peer.on('open', (id) => {
-        myIdDisplay.innerText = id;
-        status.innerText = "ID получен. Ждем друга.";
-    });
-
-    // Когда К НАМ подключаются
-    peer.on('connection', (c) => {
-        conn = c;
-        status.innerText = "Друг в сети! Рисуйте!";
-        setupReceiver();
-    });
-
-    // Когда МЫ подключаемся
-    function connectToFriend() {
-        const id = document.getElementById('friend-id').value.trim();
-        if (id) {
-            conn = peer.connect(id);
-            status.innerText = "Соединение...";
-            setupReceiver();
-        }
-    }
-
-    function setupReceiver() {
-        conn.on('open', () => {
-            status.innerText = "Связь установлена!";
-        });
-        conn.on('data', (data) => {
-            // Рисуем то, что прислал друг (красным)
-            draw(data.x, data.y, '#ff4444', false);
-        });
-    }
-
-    // Если ошибка сервера
-    peer.on('error', (err) => {
-        status.innerText = "Ошибка: " + err.type;
-        console.error(err);
-    });
+    canvas.onmousemove = (e) => { if (drawing) draw(e.clientX, e.clientY, '#00ff88'); };
 
 </script>
 </body>
