@@ -2,164 +2,94 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Секретная Рисовалка</title>
-    <!-- Подключаем библиотеку для онлайн связи -->
-    <script src="https://unpkg.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mega Online Paint</title>
+    <!-- Используем надежный Pusher для связи -->
+    <script src="https://js.pusher.com"></script>
     <style>
-        body { 
-            background: #121212; 
-            color: white; 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            text-align: center; 
-            margin: 0; 
-            overflow: hidden; 
-            touch-action: none;
-        }
-        #ui { 
-            position: absolute; 
-            top: 10px; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            z-index: 10; 
-            background: rgba(30, 30, 30, 0.9); 
-            padding: 15px; 
-            border-radius: 12px; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            width: 90%;
-            max-width: 400px;
-        }
+        body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        #ui { position: absolute; top: 10px; width: 100%; text-align: center; z-index: 10; }
+        .controls { background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; display: inline-block; }
         canvas { background: white; cursor: crosshair; }
-        input { 
-            padding: 10px; 
-            border-radius: 5px; 
-            border: 1px solid #444; 
-            background: #222; 
-            color: white; 
-            margin: 5px;
-            width: 70%;
-        }
-        button { 
-            padding: 10px 15px; 
-            border-radius: 5px; 
-            border: none; 
-            margin: 5px; 
-            background: #00ff88; 
-            color: #000;
-            font-weight: bold; 
-            cursor: pointer; 
-        }
-        button:hover { background: #00cc6e; }
-        #my-id { 
-            color: #00ff88; 
-            font-weight: bold; 
-            font-family: monospace; 
-            background: #000; 
-            padding: 2px 5px; 
-            border-radius: 3px;
-        }
-        .status { font-size: 0.8rem; margin-top: 5px; color: #aaa; }
+        #room-id { color: #00ff88; font-weight: bold; cursor: pointer; border-bottom: 1px dashed; }
     </style>
 </head>
 <body>
 
-    <div id="ui">
-        <div>Твой ключ: <span id="my-id">Генерация...</span></div>
-        <input type="text" id="peer-id-input" placeholder="Введи ключ друга">
-        <button id="connect-btn">Подключиться</button>
-        <br>
-        <button onclick="clearCanvas()" style="background: #ff4444; color: white;">Очистить всё</button>
-        <div class="status" id="status">Ожидание сети...</div>
+<div id="ui">
+    <div class="controls">
+        Комната: <span id="room-id" onclick="changeRoom()">загрузка...</span> 
+        (нажми, чтобы сменить)
+        <br><br>
+        <button onclick="clearCanvas()">Очистить у всех</button>
     </div>
+</div>
 
-    <canvas id="canvas"></canvas>
+<canvas id="canvas"></canvas>
 
-    <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const myIdDisplay = document.getElementById('my-id');
-        const peerInput = document.getElementById('peer-id-input');
-        const connectBtn = document.getElementById('connect-btn');
-        const statusDisplay = document.getElementById('status');
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    // Генерируем ID комнаты или берем из ссылки
+    let room = window.location.hash.substring(1) || Math.random().toString(36).substring(7);
+    window.location.hash = room;
+    document.getElementById('room-id').innerText = room;
 
-        let drawing = false;
-        let connection;
-        
-        // Настройка PeerJS
-        const peer = new Peer();
+    // Настройка связи (публичный ключ для тестов)
+    const pusher = new Pusher('de504746473181ea097a', { cluster: 'mt1' });
+    const channel = pusher.subscribe('drawing-' + room);
 
-        // 1. Получаем свой ID
-        peer.on('open', (id) => {
-            myIdDisplay.innerText = id;
-            statusDisplay.innerText = "Готов к подключению";
-        });
+    // Слушаем чужие мазки
+    channel.bind('draw', (data) => {
+        drawCircle(data.x, data.y, data.color);
+    });
 
-        // 2. Слушаем входящие подключения
-        peer.on('connection', (conn) => {
-            connection = conn;
-            setupConnection();
-            statusDisplay.innerText = "Друг подключился!";
-        });
+    channel.bind('clear', () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
 
-        // 3. Подключаемся к другу сами
-        connectBtn.addEventListener('click', () => {
-            const remoteId = peerInput.value.trim();
-            if (remoteId) {
-                statusDisplay.innerText = "Соединение...";
-                connection = peer.connect(remoteId);
-                setupConnection();
-            }
-        });
+    let drawing = false;
 
-        function setupConnection() {
-            connection.on('open', () => {
-                statusDisplay.innerText = "Связь установлена! Рисуй!";
-            });
-            connection.on('data', (data) => {
-                // Рисуем то, что прислал друг (другим цветом)
-                draw(data.x, data.y, '#ff0055', false);
-            });
-        }
+    function drawCircle(x, y, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fill();
+    }
 
-        function draw(x, y, color, shouldSend = true) {
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(x, y, 6, 0, Math.PI * 2);
-            ctx.fill();
+    function sendPoint(x, y) {
+        // Отправляем свои точки в интернет
+        fetch(`https://p-node-server.vercel.app{room}&x=${x}&y=${y}&color=red`);
+    }
 
-            // Если рисуем мы — отправляем координаты другу
-            if (shouldSend && connection && connection.open) {
-                connection.send({ x, y });
-            }
-        }
+    canvas.addEventListener('mousedown', () => drawing = true);
+    window.addEventListener('mouseup', () => drawing = false);
+    canvas.addEventListener('mousemove', (e) => {
+        if (!drawing) return;
+        drawCircle(e.clientX, e.clientY, '#00ff88');
+        sendPoint(e.clientX, e.clientY);
+    });
 
-        // Логика мышки
-        canvas.addEventListener('mousedown', () => drawing = true);
-        window.addEventListener('mouseup', () => drawing = false);
-        canvas.addEventListener('mousemove', (e) => {
-            if (!drawing) return;
-            draw(e.clientX, e.clientY, '#00ff88');
-        });
+    // Для мобилок
+    canvas.addEventListener('touchmove', (e) => {
+        const t = e.touches[0];
+        drawCircle(t.clientX, t.clientY, '#00ff88');
+        sendPoint(t.clientX, t.clientY);
+    });
 
-        // Логика для сенсорных экранов
-        canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            draw(touch.clientX, touch.clientY, '#00ff88');
-        }, { passive: false });
+    function clearCanvas() {
+        fetch(`https://p-node-server.vercel.app{room}`);
+    }
 
-        function clearCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
+    function changeRoom() {
+        const newRoom = prompt("Введи название комнаты:");
+        if (newRoom) window.location.hash = newRoom;
+        location.reload();
+    }
+</script>
 
-        // Ресайз окна
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        });
-    </script>
 </body>
 </html>
