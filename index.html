@@ -2,126 +2,79 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>P2P Рисовалка LIVE</title>
+    <title>Global Online Paint</title>
+    <!-- Подключаем базу данных Google (Firebase) -->
+    <script src="https://www.gstatic.com"></script>
+    <script src="https://www.gstatic.com"></script>
     <style>
-        body { margin: 0; background: #111; color: #0f0; font-family: monospace; overflow: hidden; }
-        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.9); padding: 15px; border: 2px solid #0f0; width: 320px; }
-        canvas { background: #fff; cursor: crosshair; display: block; }
-        textarea { width: 100%; height: 80px; background: #222; color: #0f0; border: 1px solid #0f0; margin: 5px 0; font-size: 10px; word-break: break-all; }
-        button { width: 100%; padding: 10px; background: #0f0; color: #000; border: none; font-weight: bold; cursor: pointer; margin: 5px 0; }
-        button:active { background: #0a0; }
-        .info { font-size: 11px; color: #888; margin-bottom: 10px; }
+        body { margin: 0; background: #000; color: #0f0; font-family: monospace; overflow: hidden; }
+        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.9); padding: 15px; border: 2px solid #0f0; }
+        canvas { background: #fff; cursor: crosshair; }
+        input { background: #222; color: #0f0; border: 1px solid #0f0; padding: 5px; width: 100px; }
+        button { background: #0f0; border: none; padding: 5px 10px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    <div style="font-weight:bold; margin-bottom:5px;">>>> P2P_CONNECTION_SYSTEM</div>
-    
-    <div id="step1">
-        <div class="info">1. Сгенерируй код и отправь другу:</div>
-        <button id="btn-create">СОЗДАТЬ КОД</button>
-        <textarea id="my-code" readonly></textarea>
-    </div>
-
-    <div id="step2">
-        <div class="info">2. Вставь код от друга сюда:</div>
-        <textarea id="friend-code" placeholder="Вставь сюда..."></textarea>
-        <button id="btn-connect">ПОДКЛЮЧИТЬСЯ</button>
-    </div>
-
-    <div id="status" style="color: yellow;">СТАТУС: ЛОКАЛЬНЫЙ РЕЖИМ</div>
+    КОМНАТА: <input type="text" id="room-input" value="123">
+    <button onclick="changeRoom()">ВОЙТИ</button>
+    <div id="status" style="margin-top:5px; color: yellow;">Статус: РИСУЙ!</div>
 </div>
 
 <canvas id="canvas"></canvas>
 
 <script>
+    // 1. Конфигурация (публичная тестовая база)
+    const config = {
+        databaseURL: "https://paint-online-test-default-rtdb.firebaseio.com"
+    };
+    firebase.initializeApp(config);
+    const db = firebase.database();
+
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const status = document.getElementById('status');
-    
-    // Настройка холста
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    // --- ЛОГИКА РИСОВАНИЯ (РАБОТАЕТ СРАЗУ) ---
-    let isDrawing = false;
-    let dc = null; // Канал данных
+    let room = "123";
+    let drawing = false;
 
-    function draw(x, y, color, isLocal = true) {
+    // 2. Логика рисования
+    function draw(x, y, color, send = true) {
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, 6, 0, Math.PI * 2);
         ctx.fill();
-
-        if (isLocal && dc && dc.readyState === 'open') {
-            dc.send(JSON.stringify({x, y}));
+        
+        if (send) {
+            // Отправляем точку в облако
+            db.ref('rooms/' + room).push({x, y, color: '#ff0000'});
         }
     }
 
-    canvas.onmousedown = () => isDrawing = true;
-    window.onmouseup = () => isDrawing = false;
+    canvas.onmousedown = () => drawing = true;
+    window.onmouseup = () => drawing = false;
     canvas.onmousemove = (e) => {
-        if (isDrawing) draw(e.clientX, e.clientY, '#00ff00');
+        if (drawing) draw(e.clientX, e.clientY, '#00ff00');
     };
 
-    // --- ЛОГИКА P2P (БЕЗ СЕРВЕРОВ) ---
-    const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-
-    // Создание предложения
-    document.getElementById('btn-create').onclick = async () => {
-        dc = pc.createDataChannel("paint");
-        setupDataChannel();
-        
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        
-        pc.onicecandidate = (e) => {
-            if (!e.candidate) {
-                document.getElementById('my-code').value = btoa(JSON.stringify(pc.localDescription));
-                status.innerText = "СТАТУС: КОД ГОТОВ. ШЛИ ДРУГУ.";
+    // 3. Слушаем облако (точки от друга)
+    function listen() {
+        db.ref('rooms/' + room).limitToLast(1).on('child_added', (snap) => {
+            const data = snap.val();
+            if (data.color === '#ff0000') {
+                draw(data.x, data.y, '#ff0000', false);
             }
-        };
-    };
+        });
+    }
+    listen();
 
-    // Подключение по коду
-    document.getElementById('btn-connect').onclick = async () => {
-        const rawCode = document.getElementById('friend-code').value.trim();
-        if (!rawCode) return;
-        
-        const remoteDesc = new RTCSessionDescription(JSON.parse(atob(rawCode)));
-        await pc.setRemoteDescription(remoteDesc);
-
-        if (remoteDesc.type === 'offer') {
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            pc.onicecandidate = (e) => {
-                if (!e.candidate) {
-                    document.getElementById('my-code').value = btoa(JSON.stringify(pc.localDescription));
-                    status.innerText = "СТАТУС: ОТПРАВЬ СВОЙ ОТВЕТ ДРУГУ.";
-                }
-            };
-        } else {
-            status.innerText = "СТАТУС: СОЕДИНЕНИЕ...";
-        }
-    };
-
-    pc.ondatachannel = (e) => {
-        dc = e.channel;
-        setupDataChannel();
-    };
-
-    function setupDataChannel() {
-        dc.onopen = () => {
-            status.innerText = "СТАТУС: ОНЛАЙН (СВЯЗЬ ПРЯМАЯ)";
-            status.style.color = "#0f0";
-        };
-        dc.onmessage = (e) => {
-            const p = JSON.parse(e.data);
-            draw(p.x, p.y, '#ff0000', false);
-        };
+    function changeRoom() {
+        room = document.getElementById('room-input').value;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        listen();
+        alert("Зашли в комнату: " + room);
     }
 </script>
 </body>
