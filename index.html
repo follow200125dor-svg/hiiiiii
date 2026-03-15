@@ -2,22 +2,21 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Global Online Paint</title>
-    <!-- Подключаем базу данных Google (Firebase) -->
+    <title>Global Paint Final</title>
     <script src="https://www.gstatic.com"></script>
     <script src="https://www.gstatic.com"></script>
     <style>
-        body { margin: 0; background: #000; color: #0f0; font-family: monospace; overflow: hidden; }
-        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.9); padding: 15px; border: 2px solid #0f0; }
-        canvas { background: #fff; cursor: crosshair; }
-        input { background: #222; color: #0f0; border: 1px solid #0f0; padding: 5px; width: 100px; }
-        button { background: #0f0; border: none; padding: 5px 10px; font-weight: bold; cursor: pointer; }
+        body { margin: 0; background: #fff; overflow: hidden; font-family: monospace; }
+        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.8); color: #0f0; padding: 15px; border-radius: 8px; }
+        canvas { display: block; background: #fff; cursor: crosshair; }
+        input { background: #222; color: #0f0; border: 1px solid #0f0; padding: 5px; width: 150px; }
+        button { background: #0f0; color: #000; border: none; padding: 5px 10px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    КОМНАТА: <input type="text" id="room-input" value="123">
+    КЛЮЧ КОМНАТЫ: <input type="text" id="room-input">
     <button onclick="changeRoom()">ВОЙТИ</button>
     <div id="status" style="margin-top:5px; color: yellow;">Статус: РИСУЙ!</div>
 </div>
@@ -25,56 +24,56 @@
 <canvas id="canvas"></canvas>
 
 <script>
-    // 1. Конфигурация (публичная тестовая база)
-    const config = {
-        databaseURL: "https://paint-online-test-default-rtdb.firebaseio.com"
-    };
+    const config = { databaseURL: "https://paint-online-test-default-rtdb.firebaseio.com" };
     firebase.initializeApp(config);
     const db = firebase.database();
 
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    
+    // Подгоняем размер под экран
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    let room = "123";
+    // Генерируем ключ автоматически, если его нет
+    let room = window.location.hash.substring(1) || Math.random().toString(36).substring(7);
+    window.location.hash = room;
+    document.getElementById('room-input').value = room;
+
     let drawing = false;
 
-    // 2. Логика рисования
     function draw(x, y, color, send = true) {
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, 6, 0, Math.PI * 2);
         ctx.fill();
-        
-        if (send) {
-            // Отправляем точку в облако
-            db.ref('rooms/' + room).push({x, y, color: '#ff0000'});
-        }
+        if (send) db.ref('rooms/' + room).push({x, y, color: '#ff0000'});
     }
 
     canvas.onmousedown = () => drawing = true;
     window.onmouseup = () => drawing = false;
-    canvas.onmousemove = (e) => {
-        if (drawing) draw(e.clientX, e.clientY, '#00ff00');
+    canvas.onmousemove = (e) => { if (drawing) draw(e.clientX, e.clientY, '#00ff00'); };
+
+    // Тач для мобилок
+    canvas.ontouchmove = (e) => {
+        e.preventDefault();
+        const t = e.touches[0];
+        draw(t.clientX, t.clientY, '#00ff00');
     };
 
-    // 3. Слушаем облако (точки от друга)
     function listen() {
         db.ref('rooms/' + room).limitToLast(1).on('child_added', (snap) => {
             const data = snap.val();
-            if (data.color === '#ff0000') {
-                draw(data.x, data.y, '#ff0000', false);
-            }
+            if (data.color === '#ff0000') draw(data.x, data.y, '#ff0000', false);
         });
     }
     listen();
 
     function changeRoom() {
         room = document.getElementById('room-input').value;
+        window.location.hash = room;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         listen();
-        alert("Зашли в комнату: " + room);
     }
 </script>
 </body>
