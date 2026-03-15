@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мой Первый Кликер</title>
+    <style>
+        body { background: #1a1a1a; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        #counter { font-size: 5rem; margin-bottom: 20px; color: #00ff88; text-shadow: 0 0 10px #00ff88; }
+        #click-btn { padding: 20px 50px; font-size: 1.5rem; cursor: pointer; background: #00ff88; border: none; border-radius: 10px; font-weight: bold; transition: transform 0.1s; }
+        #click-btn:active { transform: scale(0.95); }
+        .stats { margin-top: 20px; opacity: 0.7; }
+    </style>
+</head>
+<body>
+
+    <div id="counter">0</div>
+    <button id="click-btn">КЛИКАЙ!</button>
+    <div class="stats">Кликов за сессию: <span id="session-stats">0</span></div>
+
+    <script>
+        let score = 0;
+        const counterDisplay = document.getElementById('counter');
+        const statsDisplay = document.getElementById('session-stats');
+        const btn = document.getElementById('click-btn');
+
+        btn.addEventListener('click', () => {
+            score++;
+            counterDisplay.innerText = score;
+            statsDisplay.innerText = score;
+            
+            // Маленький эффект рандомного цвета при клике
+            if (score % 10 === 0) {
+                counterDisplay.style.color = '#' + Math.floor(Math.random()*16777215).toString(16);
+            }
+        });
+    </script>
+</body>
+</html>
