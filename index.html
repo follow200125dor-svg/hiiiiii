@@ -2,27 +2,25 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mega Online Paint</title>
-    <!-- Используем надежный Pusher для связи -->
-    <script src="https://js.pusher.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Рабочая Рисовалка</title>
+    <script src="https://unpkg.com"></script>
     <style>
         body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
-        #ui { position: absolute; top: 10px; width: 100%; text-align: center; z-index: 10; }
-        .controls { background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; display: inline-block; }
-        canvas { background: white; cursor: crosshair; }
-        #room-id { color: #00ff88; font-weight: bold; cursor: pointer; border-bottom: 1px dashed; }
+        #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; border: 1px solid #00ff88; }
+        canvas { background: #ffffff; display: block; }
+        #status { font-size: 12px; color: #00ff88; margin-top: 5px; }
+        button { background: #00ff88; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    <div class="controls">
-        Комната: <span id="room-id" onclick="changeRoom()">загрузка...</span> 
-        (нажми, чтобы сменить)
-        <br><br>
-        <button onclick="clearCanvas()">Очистить у всех</button>
-    </div>
+    <div>Твой ID: <b id="my-id">...</b></div>
+    <input type="text" id="friend-id" placeholder="ID друга" style="margin: 5px 0; padding: 5px;">
+    <br>
+    <button onclick="connectToFriend()">Подключиться</button>
+    <div id="status">Запуск системы...</div>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -30,66 +28,85 @@
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const status = document.getElementById('status');
+    const myIdDisplay = document.getElementById('my-id');
 
-    // Генерируем ID комнаты или берем из ссылки
-    let room = window.location.hash.substring(1) || Math.random().toString(36).substring(7);
-    window.location.hash = room;
-    document.getElementById('room-id').innerText = room;
+    // Настройка размера холста
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.onresize = resize;
+    resize();
 
-    // Настройка связи (публичный ключ для тестов)
-    const pusher = new Pusher('de504746473181ea097a', { cluster: 'mt1' });
-    const channel = pusher.subscribe('drawing-' + room);
+    let peer = new Peer();
+    let conn;
 
-    // Слушаем чужие мазки
-    channel.bind('draw', (data) => {
-        drawCircle(data.x, data.y, data.color);
+    // Генерируем ID
+    peer.on('open', (id) => {
+        myIdDisplay.innerText = id;
+        status.innerText = "Готов. Скопируй ID и скинь другу.";
     });
 
-    channel.bind('clear', () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Принимаем входящее соединение
+    peer.on('connection', (c) => {
+        conn = c;
+        setupChat();
+        status.innerText = "Друг подключился!";
     });
 
-    let drawing = false;
+    // Подключаемся к другу
+    function connectToFriend() {
+        const id = document.getElementById('friend-id').value;
+        if (id) {
+            conn = peer.connect(id);
+            setupChat();
+            status.innerText = "Подключаюсь...";
+        }
+    }
 
-    function drawCircle(x, y, color) {
+    function setupChat() {
+        conn.on('open', () => {
+            status.innerText = "Связь есть! Можно рисовать.";
+        });
+        conn.on('data', (data) => {
+            draw(data.x, data.y, '#ff4444', false);
+        });
+    }
+
+    // Функция рисования
+    function draw(x, y, color, isLocal = true) {
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, 5, 0, Math.PI * 2);
         ctx.fill();
+
+        // Отправляем точку другу
+        if (isLocal && conn && conn.open) {
+            conn.send({ x: x, y: y });
+        }
     }
 
-    function sendPoint(x, y) {
-        // Отправляем свои точки в интернет
-        fetch(`https://p-node-server.vercel.app{room}&x=${x}&y=${y}&color=red`);
-    }
+    // Мышка
+    let isDrawing = false;
+    canvas.onmousedown = () => isDrawing = true;
+    canvas.onmouseup = () => isDrawing = false;
+    canvas.onmousemove = (e) => {
+        if (isDrawing) draw(e.clientX, e.clientY, '#00ff88');
+    };
 
-    canvas.addEventListener('mousedown', () => drawing = true);
-    window.addEventListener('mouseup', () => drawing = false);
-    canvas.addEventListener('mousemove', (e) => {
-        if (!drawing) return;
-        drawCircle(e.clientX, e.clientY, '#00ff88');
-        sendPoint(e.clientX, e.clientY);
+    // Тач (для телефонов)
+    canvas.ontouchmove = (e) => {
+        const touch = e.touches[0];
+        draw(touch.clientX, touch.clientY, '#00ff88');
+    };
+
+    // Проверка ошибок
+    peer.on('error', (err) => {
+        status.innerText = "Ошибка: " + err.type;
+        console.error(err);
     });
 
-    // Для мобилок
-    canvas.addEventListener('touchmove', (e) => {
-        const t = e.touches[0];
-        drawCircle(t.clientX, t.clientY, '#00ff88');
-        sendPoint(t.clientX, t.clientY);
-    });
-
-    function clearCanvas() {
-        fetch(`https://p-node-server.vercel.app{room}`);
-    }
-
-    function changeRoom() {
-        const newRoom = prompt("Введи название комнаты:");
-        if (newRoom) window.location.hash = newRoom;
-        location.reload();
-    }
 </script>
-
 </body>
 </html>
