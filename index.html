@@ -3,24 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Рабочая Рисовалка</title>
+    <title>Online Paint PeerJS</title>
+    <!-- Подключаем библиотеку связи -->
     <script src="https://unpkg.com"></script>
     <style>
         body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
-        #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; border: 1px solid #00ff88; }
-        canvas { background: #ffffff; display: block; }
-        #status { font-size: 12px; color: #00ff88; margin-top: 5px; }
-        button { background: #00ff88; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.9); padding: 15px; border-radius: 10px; border: 1px solid #00ff88; width: 250px; }
+        canvas { background: #ffffff; cursor: crosshair; }
+        input { width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; background: #333; color: white; border: 1px solid #555; }
+        button { width: 100%; padding: 10px; background: #00ff88; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; }
+        #my-id-box { font-size: 14px; margin-bottom: 10px; }
+        #my-id { color: #00ff88; font-family: monospace; cursor: pointer; text-decoration: underline; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    <div>Твой ID: <b id="my-id">...</b></div>
-    <input type="text" id="friend-id" placeholder="ID друга" style="margin: 5px 0; padding: 5px;">
-    <br>
-    <button onclick="connectToFriend()">Подключиться</button>
-    <div id="status">Запуск системы...</div>
+    <div id="my-id-box">Твой ID: <span id="my-id">Загрузка...</span></div>
+    <input type="text" id="friend-id" placeholder="Вставь ID друга">
+    <button onclick="connectToFriend()">ПОДКЛЮЧИТЬСЯ</button>
+    <div id="status" style="font-size: 12px; margin-top: 10px; color: #aaa;">Статус: Готов рисовать</div>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -28,80 +30,78 @@
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const status = document.getElementById('status');
     const myIdDisplay = document.getElementById('my-id');
+    const status = document.getElementById('status');
 
-    // Настройка размера холста
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-    window.onresize = resize;
-    resize();
+    // 1. Настройка холста (Рисует СРАЗУ)
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-    let peer = new Peer();
-    let conn;
+    let drawing = false;
+    let conn = null;
 
-    // Генерируем ID
-    peer.on('open', (id) => {
-        myIdDisplay.innerText = id;
-        status.innerText = "Готов. Скопируй ID и скинь другу.";
-    });
-
-    // Принимаем входящее соединение
-    peer.on('connection', (c) => {
-        conn = c;
-        setupChat();
-        status.innerText = "Друг подключился!";
-    });
-
-    // Подключаемся к другу
-    function connectToFriend() {
-        const id = document.getElementById('friend-id').value;
-        if (id) {
-            conn = peer.connect(id);
-            setupChat();
-            status.innerText = "Подключаюсь...";
-        }
-    }
-
-    function setupChat() {
-        conn.on('open', () => {
-            status.innerText = "Связь есть! Можно рисовать.";
-        });
-        conn.on('data', (data) => {
-            draw(data.x, data.y, '#ff4444', false);
-        });
-    }
-
-    // Функция рисования
     function draw(x, y, color, isLocal = true) {
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, 5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Отправляем точку другу
+        // Отправляем точку, если есть связь
         if (isLocal && conn && conn.open) {
-            conn.send({ x: x, y: y });
+            conn.send({ x, y });
         }
     }
 
-    // Мышка
-    let isDrawing = false;
-    canvas.onmousedown = () => isDrawing = true;
-    canvas.onmouseup = () => isDrawing = false;
+    // События мышки
+    canvas.onmousedown = () => drawing = true;
+    window.onmouseup = () => drawing = false;
     canvas.onmousemove = (e) => {
-        if (isDrawing) draw(e.clientX, e.clientY, '#00ff88');
+        if (drawing) draw(e.clientX, e.clientY, '#00ff88');
     };
 
-    // Тач (для телефонов)
+    // События тача (телефон)
     canvas.ontouchmove = (e) => {
-        const touch = e.touches[0];
-        draw(touch.clientX, touch.clientY, '#00ff88');
+        e.preventDefault();
+        const t = e.touches[0];
+        draw(t.clientX, t.clientY, '#00ff88');
     };
 
-    // Проверка ошибок
+    // 2. Логика связи (PeerJS)
+    const peer = new Peer();
+
+    peer.on('open', (id) => {
+        myIdDisplay.innerText = id;
+        status.innerText = "ID получен. Ждем друга.";
+    });
+
+    // Когда К НАМ подключаются
+    peer.on('connection', (c) => {
+        conn = c;
+        status.innerText = "Друг в сети! Рисуйте!";
+        setupReceiver();
+    });
+
+    // Когда МЫ подключаемся
+    function connectToFriend() {
+        const id = document.getElementById('friend-id').value.trim();
+        if (id) {
+            conn = peer.connect(id);
+            status.innerText = "Соединение...";
+            setupReceiver();
+        }
+    }
+
+    function setupReceiver() {
+        conn.on('open', () => {
+            status.innerText = "Связь установлена!";
+        });
+        conn.on('data', (data) => {
+            // Рисуем то, что прислал друг (красным)
+            draw(data.x, data.y, '#ff4444', false);
+        });
+    }
+
+    // Если ошибка сервера
     peer.on('error', (err) => {
         status.innerText = "Ошибка: " + err.type;
         console.error(err);
