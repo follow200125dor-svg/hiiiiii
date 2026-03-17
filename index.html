@@ -4,32 +4,31 @@
     <meta charset="UTF-8">
     <title>Рисовалка с другом 🎨</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
         canvas { border: 3px solid #444; background: white; cursor: crosshair; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
         .controls { background: #333; padding: 15px; border-radius: 10px; display: inline-block; margin-bottom: 20px; }
-        input { padding: 10px; border-radius: 5px; border: none; width: 200px; font-size: 16px; }
-        button { padding: 10px 20px; cursor: pointer; border-radius: 5px; border: none; background: #ff4757; color: white; font-weight: bold; transition: 0.3s; }
-        button:hover { background: #ff6b81; }
-        #statusText { margin-top: 10px; color: #aaa; }
+        input { padding: 10px; border-radius: 5px; border: none; width: 150px; font-size: 16px; margin-right: 5px; }
+        button { padding: 10px 15px; cursor: pointer; border-radius: 5px; border: none; background: #ff4757; color: white; font-weight: bold; margin: 2px; }
+        .gen-btn { background: #2f3542; } /* Цвет кнопки генерации */
+        #statusText { margin-top: 10px; color: #00ff88; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <div class="controls">
         <h2>Онлайн Холст 🖌️</h2>
-        <input type="text" id="roomInput" placeholder="Придумай ключ (напр. 123)">
-        <button onclick="connectToRoom()">Создать / Войти</button>
-        <p id="statusText">Введите ключ комнаты, чтобы рисовать вместе</p>
+        <input type="text" id="roomInput" placeholder="Ключ комнаты">
+        <button onclick="connectToRoom()">Войти</button>
+        <button class="gen-btn" onclick="generateKey()">🎲 Генерировать</button>
+        <p id="statusText">Нажми "Генерировать" или введи ключ друга</p>
     </div>
     <br>
     <canvas id="paintCanvas" width="800" height="500"></canvas>
 
-    <!-- Подключаем Firebase (Старая добрая версия для простоты) -->
     <script src="https://www.gstatic.com"></script>
     <script src="https://www.gstatic.com"></script>
 
     <script>
-        // ТВОИ ДАННЫЕ ИЗ СКРИНШОТА:
         const firebaseConfig = {
             apiKey: "AIzaSyA5F0iJajKvVM5PLFVIW8q8C9MNyhM14k0",
             authDomain: "mypaint-2987b.firebaseapp.com",
@@ -37,7 +36,6 @@
             storageBucket: "mypaint-2987b.firebasestorage.app",
             messagingSenderId: "178794869176",
             appId: "1:178794869176:web:9a8bef15319be47b13189d",
-            // Твой databaseURL подставится автоматически из projectId
             databaseURL: "https://mypaint-2987b-default-rtdb.firebaseio.com" 
         };
 
@@ -49,15 +47,25 @@
         let drawing = false;
         let currentRoom = null;
 
+        // --- ФУНКЦИЯ ГЕНЕРАЦИИ КЛЮЧА ---
+        function generateKey() {
+            const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+            let key = "";
+            for (let i = 0; i < 6; i++) {
+                key += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            document.getElementById('roomInput').value = key;
+            connectToRoom();
+        }
+
         function connectToRoom() {
             const roomKey = document.getElementById('roomInput').value.trim();
-            if (!roomKey) return alert("Введите ключ!");
+            if (!roomKey) return alert("Введите или создайте ключ!");
             
             currentRoom = roomKey;
-            document.getElementById('statusText').innerText = "Вы в комнате: " + roomKey + ". Друг должен ввести этот же ключ!";
+            document.getElementById('statusText').innerText = "КЛЮЧ ДЛЯ ДРУГА: " + roomKey;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Слушаем новые линии в комнате
             db.ref('rooms/' + currentRoom).on('child_added', (snapshot) => {
                 const data = snapshot.val();
                 drawOnCanvas(data.x, data.y, data.type);
@@ -71,11 +79,10 @@
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-
-            db.ref('rooms/' + currentRoom).push({ x, y, type: 'move' });
+            db.ref('rooms/' + currentRoom).push({ x, y });
         });
 
-        function drawOnCanvas(x, y, type) {
+        function drawOnCanvas(x, y) {
             ctx.lineWidth = 4;
             ctx.lineCap = 'round';
             ctx.strokeStyle = '#2f3542';
