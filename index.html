@@ -2,95 +2,102 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Рисовалка с другом 🎨</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Бро, рисуем онлайн!</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
-        canvas { border: 3px solid #444; background: white; cursor: crosshair; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        .controls { background: #333; padding: 15px; border-radius: 10px; display: inline-block; margin-bottom: 20px; }
-        input { padding: 10px; border-radius: 5px; border: none; width: 150px; font-size: 16px; margin-right: 5px; }
-        button { padding: 10px 15px; cursor: pointer; border-radius: 5px; border: none; background: #ff4757; color: white; font-weight: bold; margin: 2px; }
-        .gen-btn { background: #2f3542; } /* Цвет кнопки генерации */
-        #statusText { margin-top: 10px; color: #00ff88; font-weight: bold; }
+        body { margin: 0; background: #0f0f0f; color: #fff; font-family: 'Arial', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; cursor: crosshair; }
+        .menu { position: fixed; top: 15px; left: 15px; display: flex; gap: 10px; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px; backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1); z-index: 100; }
+        input[type="color"] { border: none; width: 35px; height: 35px; cursor: pointer; background: none; }
+        button { background: #ff4757; color: white; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #ff6b81; }
+        #status { position: fixed; bottom: 10px; right: 15px; font-size: 12px; color: #555; }
     </style>
 </head>
 <body>
 
-    <div class="controls">
-        <h2>Онлайн Холст 🖌️</h2>
-        <input type="text" id="roomInput" placeholder="Ключ комнаты">
-        <button onclick="connectToRoom()">Войти</button>
-        <button class="gen-btn" onclick="generateKey()">🎲 Генерировать</button>
-        <p id="statusText">Нажми "Генерировать" или введи ключ друга</p>
+    <div class="menu">
+        <input type="color" id="colorPicker" value="#00ffcc">
+        <button id="clearBtn">Очистить всё</button>
     </div>
-    <br>
-    <canvas id="paintCanvas" width="800" height="500"></canvas>
+    <div id="status">Подключение к Firebase...</div>
+    <canvas id="canvas"></canvas>
 
-    <script src="https://www.gstatic.com"></script>
-    <script src="https://www.gstatic.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com";
+        import { getDatabase, ref, set, push, onChildAdded, remove, onValue } from "https://www.gstatic.com";
 
-    <script>
+        // ТВОЙ КОНФИГ
         const firebaseConfig = {
-            apiKey: "AIzaSyA5F0iJajKvVM5PLFVIW8q8C9MNyhM14k0",
+            apiKey: "AIzaSyASFOrjAJkvfWSPLPVIW5qbC9MuyNm14k0",
             authDomain: "mypaint-2987b.firebaseapp.com",
+            databaseURL: "https://mypaint-2987b-default-rtdb.firebaseio.com",
             projectId: "mypaint-2987b",
             storageBucket: "mypaint-2987b.firebasestorage.app",
-            messagingSenderId: "178794869176",
-            appId: "1:178794869176:web:9a8bef15319be47b13189d",
-            databaseURL: "https://mypaint-2987b-default-rtdb.firebaseio.com" 
+            messagingSenderId: "178794859176",
+            appId: "1:178794859176:web:9a9bef15310be47b13109d"
         };
 
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const drawRef = ref(db, 'drawing_data');
 
-        const canvas = document.getElementById('paintCanvas');
+        const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
+        
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
         let drawing = false;
-        let currentRoom = null;
 
-        // --- ФУНКЦИЯ ГЕНЕРАЦИИ КЛЮЧА ---
-        function generateKey() {
-            const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-            let key = "";
-            for (let i = 0; i < 6; i++) {
-                key += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            document.getElementById('roomInput').value = key;
-            connectToRoom();
-        }
-
-        function connectToRoom() {
-            const roomKey = document.getElementById('roomInput').value.trim();
-            if (!roomKey) return alert("Введите или создайте ключ!");
+        // Отправка точки в БД
+        const sendPoint = (e) => {
+            if (!drawing) return;
+            const x = e.clientX || e.touches[0].clientX;
+            const y = e.clientY || e.touches[0].clientY;
             
-            currentRoom = roomKey;
-            document.getElementById('statusText').innerText = "КЛЮЧ ДЛЯ ДРУГА: " + roomKey;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const newPoint = push(drawRef);
+            set(newPoint, { x, y, color: colorPicker.value });
+        };
 
-            db.ref('rooms/' + currentRoom).on('child_added', (snapshot) => {
-                const data = snapshot.val();
-                drawOnCanvas(data.x, data.y, data.type);
-            });
-        }
+        canvas.addEventListener('mousedown', () => drawing = true);
+        canvas.addEventListener('mousemove', sendPoint);
+        canvas.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); });
+        
+        canvas.addEventListener('touchstart', (e) => { drawing = true; sendPoint(e); });
+        canvas.addEventListener('touchmove', sendPoint);
+        canvas.addEventListener('touchend', () => { drawing = false; ctx.beginPath(); });
 
-        canvas.addEventListener('mousedown', () => { drawing = true; ctx.beginPath(); });
-        canvas.addEventListener('mouseup', () => { drawing = false; });
-        canvas.addEventListener('mousemove', (e) => {
-            if (!drawing || !currentRoom) return;
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            db.ref('rooms/' + currentRoom).push({ x, y });
-        });
-
-        function drawOnCanvas(x, y) {
-            ctx.lineWidth = 4;
+        // Отрисовка из БД для всех
+        onChildAdded(drawRef, (snap) => {
+            const p = snap.val();
+            ctx.lineWidth = 5;
             ctx.lineCap = 'round';
-            ctx.strokeStyle = '#2f3542';
-            ctx.lineTo(x, y);
+            ctx.strokeStyle = p.color;
+            
+            ctx.lineTo(p.x, p.y);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(x, y);
-        }
+            ctx.moveTo(p.x, p.y);
+            document.getElementById('status').innerText = "Online";
+        });
+
+        // Кнопка очистки
+        document.getElementById('clearBtn').onclick = () => remove(drawRef);
+
+        // Синхронная очистка у всех
+        onValue(drawRef, (snap) => {
+            if (!snap.exists()) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.beginPath();
+            }
+        });
+
+        window.onresize = () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        };
     </script>
 </body>
 </html>
