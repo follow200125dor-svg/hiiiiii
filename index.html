@@ -1,80 +1,89 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Global Paint Final</title>
-    <script src="https://www.gstatic.com"></script>
-    <script src="https://www.gstatic.com"></script>
+    <title>Рисовалка с другом 🎨</title>
     <style>
-        body { margin: 0; background: #fff; overflow: hidden; font-family: monospace; }
-        #ui { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.8); color: #0f0; padding: 15px; border-radius: 8px; }
-        canvas { display: block; background: #fff; cursor: crosshair; }
-        input { background: #222; color: #0f0; border: 1px solid #0f0; padding: 5px; width: 150px; }
-        button { background: #0f0; color: #000; border: none; padding: 5px 10px; font-weight: bold; cursor: pointer; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
+        canvas { border: 3px solid #444; background: white; cursor: crosshair; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .controls { background: #333; padding: 15px; border-radius: 10px; display: inline-block; margin-bottom: 20px; }
+        input { padding: 10px; border-radius: 5px; border: none; width: 200px; font-size: 16px; }
+        button { padding: 10px 20px; cursor: pointer; border-radius: 5px; border: none; background: #ff4757; color: white; font-weight: bold; transition: 0.3s; }
+        button:hover { background: #ff6b81; }
+        #statusText { margin-top: 10px; color: #aaa; }
     </style>
 </head>
 <body>
 
-<div id="ui">
-    КЛЮЧ КОМНАТЫ: <input type="text" id="room-input">
-    <button onclick="changeRoom()">ВОЙТИ</button>
-    <div id="status" style="margin-top:5px; color: yellow;">Статус: РИСУЙ!</div>
-</div>
+    <div class="controls">
+        <h2>Онлайн Холст 🖌️</h2>
+        <input type="text" id="roomInput" placeholder="Придумай ключ (напр. 123)">
+        <button onclick="connectToRoom()">Создать / Войти</button>
+        <p id="statusText">Введите ключ комнаты, чтобы рисовать вместе</p>
+    </div>
+    <br>
+    <canvas id="paintCanvas" width="800" height="500"></canvas>
 
-<canvas id="canvas"></canvas>
+    <!-- Подключаем Firebase (Старая добрая версия для простоты) -->
+    <script src="https://www.gstatic.com"></script>
+    <script src="https://www.gstatic.com"></script>
 
-<script>
-    const config = { databaseURL: "https://paint-online-test-default-rtdb.firebaseio.com" };
-    firebase.initializeApp(config);
-    const db = firebase.database();
+    <script>
+        // ТВОИ ДАННЫЕ ИЗ СКРИНШОТА:
+        const firebaseConfig = {
+            apiKey: "AIzaSyA5F0iJajKvVM5PLFVIW8q8C9MNyhM14k0",
+            authDomain: "mypaint-2987b.firebaseapp.com",
+            projectId: "mypaint-2987b",
+            storageBucket: "mypaint-2987b.firebasestorage.app",
+            messagingSenderId: "178794869176",
+            appId: "1:178794869176:web:9a8bef15319be47b13189d",
+            // Твой databaseURL подставится автоматически из projectId
+            databaseURL: "https://mypaint-2987b-default-rtdb.firebaseio.com" 
+        };
 
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    // Подгоняем размер под экран
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
-    // Генерируем ключ автоматически, если его нет
-    let room = window.location.hash.substring(1) || Math.random().toString(36).substring(7);
-    window.location.hash = room;
-    document.getElementById('room-input').value = room;
+        const canvas = document.getElementById('paintCanvas');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+        let currentRoom = null;
 
-    let drawing = false;
+        function connectToRoom() {
+            const roomKey = document.getElementById('roomInput').value.trim();
+            if (!roomKey) return alert("Введите ключ!");
+            
+            currentRoom = roomKey;
+            document.getElementById('statusText').innerText = "Вы в комнате: " + roomKey + ". Друг должен ввести этот же ключ!";
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    function draw(x, y, color, send = true) {
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(x, y, 6, 0, Math.PI * 2);
-        ctx.fill();
-        if (send) db.ref('rooms/' + room).push({x, y, color: '#ff0000'});
-    }
+            // Слушаем новые линии в комнате
+            db.ref('rooms/' + currentRoom).on('child_added', (snapshot) => {
+                const data = snapshot.val();
+                drawOnCanvas(data.x, data.y, data.type);
+            });
+        }
 
-    canvas.onmousedown = () => drawing = true;
-    window.onmouseup = () => drawing = false;
-    canvas.onmousemove = (e) => { if (drawing) draw(e.clientX, e.clientY, '#00ff00'); };
+        canvas.addEventListener('mousedown', () => { drawing = true; ctx.beginPath(); });
+        canvas.addEventListener('mouseup', () => { drawing = false; });
+        canvas.addEventListener('mousemove', (e) => {
+            if (!drawing || !currentRoom) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
 
-    // Тач для мобилок
-    canvas.ontouchmove = (e) => {
-        e.preventDefault();
-        const t = e.touches[0];
-        draw(t.clientX, t.clientY, '#00ff00');
-    };
-
-    function listen() {
-        db.ref('rooms/' + room).limitToLast(1).on('child_added', (snap) => {
-            const data = snap.val();
-            if (data.color === '#ff0000') draw(data.x, data.y, '#ff0000', false);
+            db.ref('rooms/' + currentRoom).push({ x, y, type: 'move' });
         });
-    }
-    listen();
 
-    function changeRoom() {
-        room = document.getElementById('room-input').value;
-        window.location.hash = room;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        listen();
-    }
-</script>
+        function drawOnCanvas(x, y, type) {
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#2f3542';
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+    </script>
 </body>
 </html>
