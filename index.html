@@ -3,52 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paint Online - Room System</title>
+    <title>Paint Online - FIX</title>
     <style>
-        body { margin: 0; background: #0b0b0b; color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; }
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; }
         canvas { display: block; }
         
         /* Главный экран */
-        .home-screen { position: fixed; inset: 0; background: radial-gradient(circle, #1a1a1a 0%, #000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; transition: 0.5s; }
-        .home-screen.hidden { opacity: 0; pointer-events: none; }
+        #homeScreen { 
+            position: fixed; inset: 0; background: #111; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            z-index: 9999; /* Максимальный приоритет */
+        }
+        .hidden { display: none !important; }
         
-        .box { background: rgba(255,255,255,0.05); padding: 40px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); text-align: center; backdrop-filter: blur(10px); }
-        h1 { margin-bottom: 25px; font-weight: 300; letter-spacing: 2px; }
-        
-        input { padding: 15px; width: 250px; border-radius: 10px; border: none; background: #222; color: #fff; font-size: 16px; outline: none; margin-bottom: 15px; }
-        button { padding: 15px 30px; border-radius: 10px; border: none; background: #00ffcc; color: #000; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 16px; }
-        button:hover { background: #00cca3; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,255,204,0.3); }
+        .box { text-align: center; background: #222; padding: 30px; border-radius: 15px; border: 2px solid #333; }
+        input { padding: 15px; width: 200px; border-radius: 8px; border: none; font-size: 16px; margin-bottom: 10px; }
+        button#startBtn { 
+            padding: 15px 30px; border-radius: 8px; border: none; 
+            background: #00ffcc; color: #000; font-weight: bold; 
+            cursor: pointer; font-size: 16px; width: 100%;
+        }
 
         /* Панель рисования */
-        .paint-ui { position: fixed; top: 15px; left: 15px; display: flex; gap: 12px; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 12px; backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1); z-index: 100; visibility: hidden; }
-        .paint-ui.visible { visibility: visible; }
-        
-        input[type="color"] { width: 40px; height: 40px; border: none; background: none; cursor: pointer; }
-        .clear-btn { background: #ff4757; color: #fff; padding: 0 15px; border-radius: 8px; font-size: 13px; }
-        
-        #roomLabel { position: fixed; top: 15px; right: 15px; background: rgba(255,255,255,0.1); padding: 5px 15px; border-radius: 20px; font-size: 12px; color: #888; }
+        .paint-ui { 
+            position: fixed; top: 10px; left: 10px; display: none; gap: 10px; 
+            background: rgba(0,0,0,0.8); padding: 10px; border-radius: 10px; z-index: 500; 
+        }
     </style>
 </head>
 <body>
 
-    <!-- Экран выбора комнаты -->
-    <div id="homeScreen" class="home-screen">
+    <div id="homeScreen">
         <div class="box">
-            <h1>РИСОВАЛКА</h1>
-            <input type="text" id="roomInput" placeholder="Название комнаты...">
+            <h2 style="margin-top:0">ВХОД В КОМНАТУ</h2>
+            <input type="text" id="roomInput" placeholder="Название..." autofocus>
             <br>
-            <button id="startBtn">СОЗДАТЬ / ВОЙТИ</button>
+            <button id="startBtn">ВОЙТИ И РИСОВАТЬ</button>
         </div>
     </div>
 
-    <!-- Интерфейс рисования -->
     <div id="paintUI" class="paint-ui">
         <input type="color" id="colorPicker" value="#00ffcc">
-        <button class="clear-btn" id="clearBtn">ОЧИСТИТЬ</button>
-        <button onclick="location.href=location.pathname" style="background: #444; font-size: 11px;">ВЫЙТИ</button>
+        <button id="clearBtn" style="background:#ff4757; color:#fff; border:none; padding:10px; border-radius:5px; cursor:pointer;">СТЕРЕТЬ</button>
+        <button onclick="location.href=location.pathname" style="background:#444; color:#fff; border:none; padding:10px; border-radius:5px;">ВЫХОД</button>
     </div>
 
-    <div id="roomLabel"></div>
     <canvas id="canvas"></canvas>
 
     <script type="module">
@@ -68,43 +67,20 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
+        const home = document.getElementById('homeScreen');
+        const ui = document.getElementById('paintUI');
+        const btn = document.getElementById('startBtn');
+        const input = document.getElementById('roomInput');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const homeScreen = document.getElementById('homeScreen');
-        const paintUI = document.getElementById('paintUI');
-        const roomInput = document.getElementById('roomInput');
-        const startBtn = document.getElementById('startBtn');
-        const colorPicker = document.getElementById('colorPicker');
-        const clearBtn = document.getElementById('clearBtn');
-        const roomLabel = document.getElementById('roomLabel');
 
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // ПРОВЕРКА URL ПРИ ЗАГРУЗКЕ
-        const urlParams = new URLSearchParams(window.location.search);
-        const roomID = urlParams.get('room');
-
-        if (roomID) {
-            startPainting(roomID);
-        }
-
-        // КЛИК ПО КНОПКЕ "ВОЙТИ"
-        startBtn.addEventListener('click', () => {
-            const id = roomInput.value.trim();
-            if (id) {
-                // Перекидываем на URL с комнатой (страница обновится)
-                window.location.search = `?room=${id}`;
-            } else {
-                alert("Введи имя комнаты, бро!");
-            }
-        });
-
-        function startPainting(id) {
-            homeScreen.classList.add('hidden');
-            paintUI.classList.add('visible');
-            roomLabel.innerText = "Комната: " + id;
-
+        // Функция запуска
+        function join(id) {
+            home.classList.add('hidden');
+            ui.style.display = 'flex';
             const roomRef = ref(db, 'rooms/' + id);
 
             // Отрисовка
@@ -128,26 +104,41 @@
             });
 
             let drawing = false;
-            const handleMove = (e) => {
+            const draw = (e) => {
                 if (!drawing) return;
                 const x = e.clientX || (e.touches && e.touches[0].clientX);
                 const y = e.clientY || (e.touches && e.touches[0].clientY);
-                push(roomRef, { x, y, color: colorPicker.value });
+                push(roomRef, { x, y, color: document.getElementById('colorPicker').value });
             };
 
             canvas.addEventListener('mousedown', () => { drawing = true; ctx.beginPath(); });
-            canvas.addEventListener('mousemove', handleMove);
+            canvas.addEventListener('mousemove', draw);
             window.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); });
-            canvas.addEventListener('touchstart', (e) => { drawing = true; ctx.beginPath(); handleMove(e); });
-            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, {passive: false});
-
-            clearBtn.onclick = () => remove(roomRef);
+            canvas.addEventListener('touchstart', (e) => { drawing = true; ctx.beginPath(); draw(e); });
+            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); }, {passive: false});
+            document.getElementById('clearBtn').onclick = () => remove(roomRef);
         }
 
-        window.onresize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        };
+        // КЛИК ПО КНОПКЕ
+        btn.addEventListener('click', () => {
+            const id = input.value.trim();
+            if(id) {
+                window.history.pushState({}, '', '?room=' + id); // Меняем URL без перезагрузки
+                join(id);
+            } else {
+                alert("Введи имя комнаты!");
+            }
+        });
+
+        // Вход по Enter
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') btn.click();
+        });
+
+        // Проверка URL при входе
+        const roomID = new URLSearchParams(window.location.search).get('room');
+        if (roomID) join(roomID);
+
     </script>
 </body>
 </html>
