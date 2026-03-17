@@ -3,57 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paint Online - FIX</title>
+    <title>Multi-Room Paint</title>
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; }
-        canvas { display: block; }
-        
-        /* Главный экран */
-        #homeScreen { 
-            position: fixed; inset: 0; background: #111; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; 
-            z-index: 9999; /* Максимальный приоритет */
-        }
-        .hidden { display: none !important; }
-        
-        .box { text-align: center; background: #222; padding: 30px; border-radius: 15px; border: 2px solid #333; }
-        input { padding: 15px; width: 200px; border-radius: 8px; border: none; font-size: 16px; margin-bottom: 10px; }
-        button#startBtn { 
-            padding: 15px 30px; border-radius: 8px; border: none; 
-            background: #00ffcc; color: #000; font-weight: bold; 
-            cursor: pointer; font-size: 16px; width: 100%;
+        /* Общие стили */
+        * { box-sizing: border-box; outline: none; }
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            background: #0a0a0a; color: #fff; font-family: 'Segoe UI', sans-serif; 
+            overflow: hidden; 
         }
 
-        /* Панель рисования */
-        .paint-ui { 
-            position: fixed; top: 10px; left: 10px; display: none; gap: 10px; 
-            background: rgba(0,0,0,0.8); padding: 10px; border-radius: 10px; z-index: 500; 
+        /* СТРАНИЦА 1: ВХОД (ЛОББИ) */
+        #lobbyPage {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; background: radial-gradient(circle, #1a1a2e 0%, #000 100%);
+        }
+        .login-card {
+            background: rgba(255, 255, 255, 0.05); padding: 40px; border-radius: 24px;
+            backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        h1 { margin-bottom: 30px; font-weight: 300; letter-spacing: 3px; color: #00d2ff; }
+        input#roomInput {
+            width: 100%; padding: 15px; border-radius: 12px; border: 2px solid #333;
+            background: #111; color: #fff; font-size: 18px; margin-bottom: 20px;
+            transition: 0.3s;
+        }
+        input#roomInput:focus { border-color: #00d2ff; box-shadow: 0 0 15px rgba(0,210,255,0.2); }
+        button#joinBtn {
+            width: 100%; padding: 15px; border-radius: 12px; border: none;
+            background: #00d2ff; color: #000; font-weight: bold; font-size: 16px;
+            cursor: pointer; transition: 0.3s;
+        }
+        button#joinBtn:hover { background: #009ec2; transform: translateY(-2px); }
+
+        /* СТРАНИЦА 2: РИСОВАЛКА (СКРЫТА ПО УМОЛЧАНИЮ) */
+        #paintPage { display: none; width: 100%; height: 100%; position: relative; }
+        canvas { display: block; touch-action: none; background: #000; }
+        
+        .tools {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 15px; background: rgba(0,0,0,0.8); 
+            padding: 10px 20px; border-radius: 50px; border: 1px solid rgba(255,255,255,0.2);
+            z-index: 10; backdrop-filter: blur(10px);
+        }
+        .tools input[type="color"] { width: 35px; height: 35px; border: none; background: none; cursor: pointer; }
+        .tools button {
+            background: #ff4757; color: white; border: none; padding: 8px 15px;
+            border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: bold;
+        }
+        .exit-btn { background: #444 !important; }
+        #roomNameTag {
+            position: fixed; bottom: 20px; right: 20px; color: rgba(255,255,255,0.3); font-size: 12px;
         }
     </style>
 </head>
 <body>
 
-    <div id="homeScreen">
-        <div class="box">
-            <h2 style="margin-top:0">ВХОД В КОМНАТУ</h2>
-            <input type="text" id="roomInput" placeholder="Название..." autofocus>
-            <br>
-            <button id="startBtn">ВОЙТИ И РИСОВАТЬ</button>
+    <!-- БЛОК СТРАНИЦЫ ВХОДА -->
+    <div id="lobbyPage">
+        <div class="login-card">
+            <h1>PAINT ROOM</h1>
+            <input type="text" id="roomInput" placeholder="ID комнаты (любой текст)" autofocus>
+            <button id="joinBtn">СОЗДАТЬ / ВОЙТИ</button>
         </div>
     </div>
 
-    <div id="paintUI" class="paint-ui">
-        <input type="color" id="colorPicker" value="#00ffcc">
-        <button id="clearBtn" style="background:#ff4757; color:#fff; border:none; padding:10px; border-radius:5px; cursor:pointer;">СТЕРЕТЬ</button>
-        <button onclick="location.href=location.pathname" style="background:#444; color:#fff; border:none; padding:10px; border-radius:5px;">ВЫХОД</button>
+    <!-- БЛОК СТРАНИЦЫ РИСОВАЛКИ -->
+    <div id="paintPage">
+        <div class="tools">
+            <input type="color" id="colorPicker" value="#00d2ff">
+            <button id="clearBtn">ОЧИСТИТЬ</button>
+            <button class="exit-btn" id="exitBtn">ВЫЙТИ</button>
+        </div>
+        <canvas id="canvas"></canvas>
+        <div id="roomNameTag"></div>
     </div>
-
-    <canvas id="canvas"></canvas>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com";
         import { getDatabase, ref, set, push, onChildAdded, remove, onValue } from "https://www.gstatic.com";
 
+        // ТВОЙ КОНФИГ
         const firebaseConfig = {
             apiKey: "AIzaSyASFOrjAJkvfWSPLPVIW5qbC9MuyNm14k0",
             authDomain: "mypaint-2987b.firebaseapp.com",
@@ -67,35 +98,36 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        const home = document.getElementById('homeScreen');
-        const ui = document.getElementById('paintUI');
-        const btn = document.getElementById('startBtn');
-        const input = document.getElementById('roomInput');
+        // Элементы
+        const lobbyPage = document.getElementById('lobbyPage');
+        const paintPage = document.getElementById('paintPage');
+        const roomInput = document.getElementById('roomInput');
+        const joinBtn = document.getElementById('joinBtn');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        let roomRef = null;
+        let isDrawing = false;
 
-        // Функция запуска
-        function join(id) {
-            home.classList.add('hidden');
-            ui.style.display = 'flex';
-            const roomRef = ref(db, 'rooms/' + id);
+        // ФУНКЦИЯ ПЕРЕКЛЮЧЕНИЯ НА РИСОВАЛКУ
+        function openCanvas(roomId) {
+            lobbyPage.style.display = 'none';
+            paintPage.style.display = 'block';
+            document.getElementById('roomNameTag').innerText = "ROOM: " + roomId;
 
-            // Отрисовка
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            roomRef = ref(db, 'rooms/' + roomId);
+
+            // Слушаем новые точки
             onChildAdded(roomRef, (snap) => {
                 const p = snap.val();
-                ctx.lineWidth = 5;
-                ctx.lineCap = 'round';
-                ctx.strokeStyle = p.color;
-                ctx.lineTo(p.x, p.y);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(p.x, p.y);
+                draw(p.x, p.y, p.color);
             });
 
-            // Очистка
+            // Слушаем очистку
             onValue(roomRef, (snap) => {
                 if (!snap.exists()) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -103,42 +135,65 @@
                 }
             });
 
-            let drawing = false;
-            const draw = (e) => {
-                if (!drawing) return;
+            // События рисования
+            const start = () => { isDrawing = true; ctx.beginPath(); };
+            const stop = () => { isDrawing = false; ctx.beginPath(); };
+            const move = (e) => {
+                if (!isDrawing) return;
                 const x = e.clientX || (e.touches && e.touches[0].clientX);
                 const y = e.clientY || (e.touches && e.touches[0].clientY);
-                push(roomRef, { x, y, color: document.getElementById('colorPicker').value });
+                push(roomRef, { x, y, color: colorPicker.value });
             };
 
-            canvas.addEventListener('mousedown', () => { drawing = true; ctx.beginPath(); });
-            canvas.addEventListener('mousemove', draw);
-            window.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); });
-            canvas.addEventListener('touchstart', (e) => { drawing = true; ctx.beginPath(); draw(e); });
-            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); }, {passive: false});
-            document.getElementById('clearBtn').onclick = () => remove(roomRef);
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', stop);
+
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(); move(e); });
+            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e); });
+            window.addEventListener('touchend', stop);
         }
 
-        // КЛИК ПО КНОПКЕ
-        btn.addEventListener('click', () => {
-            const id = input.value.trim();
-            if(id) {
-                window.history.pushState({}, '', '?room=' + id); // Меняем URL без перезагрузки
-                join(id);
-            } else {
-                alert("Введи имя комнаты!");
+        function draw(x, y, color) {
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = color;
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        // Обработка кнопки входа
+        joinBtn.addEventListener('click', () => {
+            const id = roomInput.value.trim().toLowerCase();
+            if (id) {
+                // Меняем URL без перезагрузки для красоты
+                window.history.pushState({}, '', '?room=' + id);
+                openCanvas(id);
             }
         });
 
         // Вход по Enter
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') btn.click();
+        roomInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') joinBtn.click();
         });
 
-        // Проверка URL при входе
-        const roomID = new URLSearchParams(window.location.search).get('room');
-        if (roomID) join(roomID);
+        // Очистка холста
+        document.getElementById('clearBtn').onclick = () => { if(roomRef) remove(roomRef); };
+        
+        // Выход (на главную)
+        document.getElementById('exitBtn').onclick = () => { location.href = location.pathname; };
 
+        // Авто-вход если есть параметр в ссылке
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('room')) openCanvas(params.get('room'));
+
+        // Ресайз
+        window.onresize = () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        };
     </script>
 </body>
 </html>
