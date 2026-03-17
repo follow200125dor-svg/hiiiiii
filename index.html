@@ -3,31 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Бро, рисуем онлайн!</title>
+    <title>Firebase Multi-Room Paint</title>
     <style>
-        body { margin: 0; background: #0f0f0f; color: #fff; font-family: 'Arial', sans-serif; overflow: hidden; touch-action: none; }
-        canvas { display: block; cursor: crosshair; }
-        .menu { position: fixed; top: 15px; left: 15px; display: flex; gap: 10px; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px; backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1); z-index: 100; }
-        input[type="color"] { border: none; width: 35px; height: 35px; cursor: pointer; background: none; }
-        button { background: #ff4757; color: white; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #ff6b81; }
-        #status { position: fixed; bottom: 10px; right: 15px; font-size: 12px; color: #555; }
+        body { margin: 0; background: #121212; color: #eee; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; }
+        
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
+        .overlay.hidden { display: none; }
+        
+        .ui-panel { position: fixed; top: 10px; left: 10px; display: flex; gap: 10px; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; backdrop-filter: blur(10px); z-index: 100; }
+        
+        input, button { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: white; outline: none; }
+        button { background: #3498db; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { background: #2980b9; }
+        .btn-clear { background: #e74c3c; }
+        
+        #roomInfo { position: fixed; bottom: 10px; left: 10px; font-size: 12px; opacity: 0.5; }
     </style>
 </head>
 <body>
 
-    <div class="menu">
-        <input type="color" id="colorPicker" value="#00ffcc">
-        <button id="clearBtn">Очистить всё</button>
+    <!-- Экран входа в комнату -->
+    <div id="loginScreen" class="overlay">
+        <h2>Введите ID комнаты для подключения</h2>
+        <p style="font-size: 14px; color: #888;">(скиньте этот ID другу, чтобы рисовать вместе)</p>
+        <div style="display: flex; gap: 10px;">
+            <input type="text" id="roomInput" placeholder="Напр: bro_room_777">
+            <button id="joinBtn">Создать / Войти</button>
+        </div>
     </div>
-    <div id="status">Подключение к Firebase...</div>
+
+    <!-- Панель инструментов (скрыта до входа) -->
+    <div id="tools" class="ui-panel" style="display: none;">
+        <input type="color" id="colorPicker" value="#00ffcc">
+        <button class="btn-clear" id="clearBtn">Очистить всё</button>
+    </div>
+
+    <div id="roomInfo"></div>
     <canvas id="canvas"></canvas>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com";
-        import { getDatabase, ref, set, push, onChildAdded, remove, onValue } from "https://www.gstatic.com";
+        import { getDatabase, ref, set, push, onChildAdded, remove, onValue, off } from "https://www.gstatic.com";
 
-        // ТВОЙ КОНФИГ
+        // ТВОЙ КОНФИГ (ОСТАВЛЯЕМ КАК ЕСТЬ)
         const firebaseConfig = {
             apiKey: "AIzaSyASFOrjAJkvfWSPLPVIW5qbC9MuyNm14k0",
             authDomain: "mypaint-2987b.firebaseapp.com",
@@ -40,59 +59,77 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
-        const drawRef = ref(db, 'drawing_data');
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const loginScreen = document.getElementById('loginScreen');
+        const roomInput = document.getElementById('roomInput');
+        const joinBtn = document.getElementById('joinBtn');
+        const tools = document.getElementById('tools');
         const colorPicker = document.getElementById('colorPicker');
-        
+        const roomInfo = document.getElementById('roomInfo');
+
+        let currentRoomRef = null;
+        let drawing = false;
+
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        let drawing = false;
+        // ЛОГИКА ВХОДА В КОМНАТУ
+        joinBtn.onclick = () => {
+            const roomId = roomInput.value.trim();
+            if (!roomId) return alert("Введите название комнаты!");
 
-        // Отправка точки в БД
-        const sendPoint = (e) => {
-            if (!drawing) return;
-            const x = e.clientX || e.touches[0].clientX;
-            const y = e.clientY || e.touches[0].clientY;
+            currentRoomRef = ref(db, 'rooms/' + roomId);
+            loginScreen.classList.add('hidden');
+            tools.style.display = 'flex';
+            roomInfo.innerText = "Комната: " + roomId;
+
+            // Начинаем слушать базу этой комнаты
+            onChildAdded(currentRoomRef, (snap) => {
+                const p = snap.val();
+                drawOnCanvas(p.x, p.y, p.color);
+            });
+
+            // Слушаем очистку
+            onValue(currentRoomRef, (snap) => {
+                if (!snap.exists()) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.beginPath();
+                }
+            });
+        };
+
+        function drawOnCanvas(x, y, color) {
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = color;
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        const handleMove = (e) => {
+            if (!drawing || !currentRoomRef) return;
+            const x = e.clientX || (e.touches && e.touches[0].clientX);
+            const y = e.clientY || (e.touches && e.touches[0].clientY);
             
-            const newPoint = push(drawRef);
+            const newPoint = push(currentRoomRef);
             set(newPoint, { x, y, color: colorPicker.value });
         };
 
         canvas.addEventListener('mousedown', () => drawing = true);
-        canvas.addEventListener('mousemove', sendPoint);
+        canvas.addEventListener('mousemove', handleMove);
         canvas.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); });
         
-        canvas.addEventListener('touchstart', (e) => { drawing = true; sendPoint(e); });
-        canvas.addEventListener('touchmove', sendPoint);
+        canvas.addEventListener('touchstart', (e) => { drawing = true; handleMove(e); });
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, {passive: false});
         canvas.addEventListener('touchend', () => { drawing = false; ctx.beginPath(); });
 
-        // Отрисовка из БД для всех
-        onChildAdded(drawRef, (snap) => {
-            const p = snap.val();
-            ctx.lineWidth = 5;
-            ctx.lineCap = 'round';
-            ctx.strokeStyle = p.color;
-            
-            ctx.lineTo(p.x, p.y);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            document.getElementById('status').innerText = "Online";
-        });
-
-        // Кнопка очистки
-        document.getElementById('clearBtn').onclick = () => remove(drawRef);
-
-        // Синхронная очистка у всех
-        onValue(drawRef, (snap) => {
-            if (!snap.exists()) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.beginPath();
-            }
-        });
+        document.getElementById('clearBtn').onclick = () => {
+            if (currentRoomRef) remove(currentRoomRef);
+        };
 
         window.onresize = () => {
             canvas.width = window.innerWidth;
